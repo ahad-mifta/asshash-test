@@ -1,0 +1,26 @@
+[
+  {
+    "step": "01",
+    "title": "Choose a Property",
+    "description": "Land, flats, or resorts – handpicked, legally verified.",
+    "color": "bg-[#8EC63F]"
+  },
+  {
+    "step": "02",
+    "title": "Invest from Just 500 Taka",
+    "description": "Buy a fractional share secured by smart contract.",
+    "color": "bg-[#A8DBA0]"
+  },
+  {
+    "step": "03",
+    "title": "Earn Rental Income or ROI",
+    "description": "Get monthly rental or earn on appreciation when sold.",
+    "color": "bg-[#8EA68C]"
+  },
+  {
+    "step": "04",
+    "title": "Sell Anytime",
+    "description": "Sell shares in our secondary market or to Digiyog with 15% instant payout.",
+    "color": "bg-[#324D3E]"
+  }
+]

@@ -1,0 +1,72 @@
+@import "tailwindcss";
+@plugin "daisyui" {
+  themes: light --default;
+}
+@font-face {
+  font-family: "Mont Regular";
+  src: url("/fonts/Mont-Regular.otf") format("truetype");
+}
+@font-face {
+  font-family: "Mont RegularItalic";
+  src: url("/fonts/Mont-RegularItalic.otf") format("truetype");
+}
+@font-face {
+  font-family: "Mont Light";
+  src: url("/fonts/Mont-Black.otf") format("truetype");
+}
+@font-face {
+  font-family: "Mont Heavy";
+  src: url("/fonts/Mont-Heavy.otf") format("truetype");
+}
+@font-face {
+  font-family: "Mont SemiBold";
+  src: url("/fonts/Mont-SemiBold.otf") format("truetype");
+}
+@font-face {
+  font-family: "Mont SemiItalic";
+  src: url("/fonts/Mont-SemiBoldItalic.otf") format("truetype");
+}
+@font-face {
+  font-family: "Mont HItalic";
+  src: url("/fonts/Mont-HairlineItalic.otf") format("truetype");
+}
+@font-face {
+  font-family: "Mont HeavyItalic";
+  src: url("/fonts/Mont-HeavyItalic.otf") format("truetype");
+}
+@font-face {
+  font-family: "Mont HeavyItalic";
+  src: url("/fonts/Mont-BoldItalic.otf") format("truetype");
+}
+@font-face {
+  font-family: "Mont Black";
+  src: url("/fonts/Mont-Black.otf") format("truetype");
+}
+@theme {
+  --font-montLight: "Mont Light", sans-serif;
+  --font-montSemiBold: "Mont SemiBold", sans-serif;
+  --font-montSemiItalic: "Mont SemiItalic", sans-serif;
+  --font-montHItalic: "Mont HItalic", sans-serif;
+  --font-montHeavyItalic: "Mont HeavyItalic", sans-serif;
+  --font-montBoldItalic: "Mont BoldItalic", sans-serif;
+  --font-montRegular: "Mont Regular", sans-serif;
+  --font-montRegularItalic: "Mont RegularItalic", sans-serif;
+  --font-montHeavy: "Mont Heavy", sans-serif;
+  --font-montBlack: "Mont Black", sans-serif;
+}
+
+@utility whyBg {
+  background-image: url("/images/cover.png");
+  background-size: cover;
+  background-repeat: no-repeat;
+}
+@utility faqBg {
+  background-image: url("/images/faq-bg.png");
+  background-size: cover;
+  background-repeat: no-repeat;
+}
+.herofour {
+  background-image: url("../src/assets/hero/Doc.jpg");
+  background-size: cover;
+  background-position: center;
+}
