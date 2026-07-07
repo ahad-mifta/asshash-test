@@ -1,8 +1,17 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
 import Footer from "../../shared/Footer/Footer";
 import Navbar from "../../shared/Navbar/Navbar";
-import { answerOptions, getReport, paymentFee, tests } from "./psychologicalTestData";
+import {
+  answerOptions,
+  getReport,
+  paymentFee,
+  tests,
+} from "./psychologicalTestData";
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
 
 const initialUser = {
   name: "",
@@ -10,6 +19,10 @@ const initialUser = {
   email: "",
   phone: "",
 };
+
+// ---------------------------------------------------------------------------
+// API helpers
+// ---------------------------------------------------------------------------
 
 const saveReport = async (payload) => {
   const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
@@ -41,18 +54,43 @@ const saveReport = async (payload) => {
   return "local";
 };
 
+// ---------------------------------------------------------------------------
+// OcdTest component
+// ---------------------------------------------------------------------------
 
 const OcdTest = () => {
   const { testId = "ocd" } = useParams();
   const test = tests[testId] || tests.ocd;
   const options = answerOptions[test.answerType];
+
+  // ── Wizard step ──────────────────────────────────────────────────────────
   const [step, setStep] = useState("payment");
+
+  // ── User info ────────────────────────────────────────────────────────────
   const [user, setUser] = useState(initialUser);
+
+  // ── Quiz state ───────────────────────────────────────────────────────────
   const [answers, setAnswers] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [reportStatus, setReportStatus] = useState("");
+
+  // ── Payment state ────────────────────────────────────────────────────────
+  /**
+   * paymentStatus:
+   *   "idle"       – not started
+   *   "initiating" – calling backend to get GatewayPageURL
+   *   "pending"    – popup open, waiting for user to pay
+   *   "completed"  – payment confirmed
+   *   "failed"     – payment failed or cancelled
+   */
+  const [paymentStatus, setPaymentStatus] = useState("idle");
   const [paymentMessage, setPaymentMessage] = useState("");
 
+  // Refs for popup and polling interval
+  const popupRef = useRef(null);
+  const pollingRef = useRef(null);
+
+  // ── Derived values ───────────────────────────────────────────────────────
   const score = useMemo(
     () => answers.reduce((total, answer) => total + Number(answer || 0), 0),
     [answers]
@@ -61,21 +99,217 @@ const OcdTest = () => {
   const progress = Math.round((answers.length / test.questions.length) * 100);
   const selectedAnswer = answers[currentIndex];
 
-  const handlePayment = () => {
-    const sslCommerzUrl = import.meta.env.VITE_SSLCOMMERZ_PAYMENT_URL;
+  // ── Payment effect ───────────────────────────────────────────────────────
 
-    if (sslCommerzUrl) {
-      window.open(sslCommerzUrl, "_blank", "noopener,noreferrer");
+  // Stop polling and optionally close the popup
+  const stopPolling = () => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+  };
+
+  const closePopup = () => {
+    try {
+      if (popupRef.current && !popupRef.current.closed) {
+        popupRef.current.close();
+      }
+    } catch (_) {
+      /* cross-origin close may throw in some browsers — ignore */
+    }
+    popupRef.current = null;
+  };
+
+  // Listen for postMessage from the payment result page served by the backend
+  useEffect(() => {
+    const handleMessage = (event) => {
+      if (event.data?.type !== "ASSHASH_PAYMENT_RESULT") return;
+
+      stopPolling();
+      closePopup();
+
+      if (event.data.success) {
+        setPaymentStatus("completed");
+        setPaymentMessage("পেমেন্ট সফলভাবে সম্পন্ন হয়েছে। এগিয়ে যান।");
+      } else {
+        setPaymentStatus("failed");
+        setPaymentMessage(
+          "পেমেন্ট ব্যর্থ হয়েছে অথবা বাতিল করা হয়েছে। আবার চেষ্টা করুন।"
+        );
+      }
+    };
+
+    window.addEventListener("message", handleMessage);
+    return () => {
+      window.removeEventListener("message", handleMessage);
+      stopPolling();
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Payment handler ──────────────────────────────────────────────────────
+
+  const handlePayment = async () => {
+    if (paymentStatus === "initiating" || paymentStatus === "pending") return;
+
+    setPaymentStatus("initiating");
+    setPaymentMessage("");
+
+    const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
+
+    // ── Demo mode (no backend configured) ──────────────────────────────────
+    if (!apiBaseUrl) {
+      setPaymentStatus("completed");
       setPaymentMessage(
-        "SSLCommerz পেমেন্ট পেজ নতুন ট্যাবে খোলা হয়েছে। পেমেন্ট শেষ হলে নিচের বাটনে এগিয়ে যান।"
+        "ডেমো মোডে SSLCommerz পেমেন্ট সম্পন্ন ধরা হয়েছে। লাইভ পেমেন্টের জন্য VITE_API_BASE_URL সেট করুন।"
       );
       return;
     }
 
-    setPaymentMessage(
-      "ডেমো মোডে SSLCommerz পেমেন্ট সম্পন্ন ধরা হয়েছে। লাইভ পেমেন্টের জন্য VITE_SSLCOMMERZ_PAYMENT_URL অথবা backend initiate endpoint যুক্ত করুন।"
-    );
+    // ── Open a blank popup immediately (before the async call) so browsers ──
+    // ── don't block it as a non-user-gesture popup.                         ──
+    const popupFeatures =
+      "width=640,height=720,scrollbars=yes,resizable=yes,left=200,top=80,toolbar=no,menubar=no";
+    const popup = window.open("about:blank", "SSLCommerzPayment", popupFeatures);
+    popupRef.current = popup;
+
+    // Write a loading placeholder into the popup
+    if (popup) {
+      popup.document.write(`<!DOCTYPE html>
+<html lang="bn">
+<head>
+  <meta charset="UTF-8"/>
+  <title>পেমেন্ট লোড হচ্ছে…</title>
+  <style>
+    body{font-family:'Segoe UI',sans-serif;display:flex;align-items:center;
+         justify-content:center;min-height:100vh;margin:0;background:#f7fbf8}
+    .loader{text-align:center;color:#22B573}
+    .spinner{width:48px;height:48px;border:5px solid #e9f8f0;
+             border-top-color:#22B573;border-radius:50%;
+             animation:spin .9s linear infinite;margin:0 auto 20px}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    p{font-size:1rem;font-weight:600}
+  </style>
+</head>
+<body>
+  <div class="loader">
+    <div class="spinner"></div>
+    <p>পেমেন্ট পেজ লোড হচ্ছে…</p>
+  </div>
+</body>
+</html>`);
+    }
+
+    try {
+      const response = await fetch(`${apiBaseUrl}/initiate-payment`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          testId: test.id,
+          testTitle: test.title,
+          amount: paymentFee,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!data.ok || !data.gatewayPageUrl) {
+        closePopup();
+        setPaymentStatus("failed");
+        setPaymentMessage(
+          data.error ||
+            "পেমেন্ট শুরু করা সম্ভব হয়নি। সার্ভার কনফিগারেশন পরীক্ষা করুন।"
+        );
+        return;
+      }
+
+      setPaymentStatus("pending");
+      setPaymentMessage(
+        "SSLCommerz পেমেন্ট উইন্ডো খোলা হয়েছে। পেমেন্ট শেষ করলে এই পেজ স্বয়ংক্রিয়ভাবে আপডেট হবে।"
+      );
+
+      // Navigate the popup to the real SSLCommerz page
+      if (popup && !popup.closed) {
+        popup.location.href = data.gatewayPageUrl;
+      }
+
+      // ── Poll backend every 3 s as a fallback for postMessage ──────────────
+      const sessionId = data.sessionId;
+
+      pollingRef.current = setInterval(async () => {
+        // If user manually closed the popup, do a final status check
+        if (popup && popup.closed && pollingRef.current) {
+          stopPolling();
+          try {
+            const statusRes = await fetch(
+              `${apiBaseUrl}/payment/status/${sessionId}`
+            );
+            const statusData = await statusRes.json();
+            if (statusData.ok && statusData.status === "Completed") {
+              setPaymentStatus("completed");
+              setPaymentMessage("পেমেন্ট সফলভাবে সম্পন্ন হয়েছে। এগিয়ে যান।");
+            } else if (
+              statusData.ok &&
+              (statusData.status === "Failed" ||
+                statusData.status === "Cancelled")
+            ) {
+              setPaymentStatus("failed");
+              setPaymentMessage(
+                "পেমেন্ট ব্যর্থ হয়েছে অথবা বাতিল করা হয়েছে। আবার চেষ্টা করুন।"
+              );
+            } else {
+              // Popup closed but status still pending — user may have closed early
+              setPaymentStatus("idle");
+              setPaymentMessage(
+                "পেমেন্ট উইন্ডো বন্ধ করা হয়েছে। পেমেন্ট সম্পন্ন না হলে আবার চেষ্টা করুন।"
+              );
+            }
+          } catch {
+            setPaymentStatus("idle");
+            setPaymentMessage(
+              "পেমেন্ট উইন্ডো বন্ধ। স্ট্যাটাস জানা যায়নি — আবার চেষ্টা করুন।"
+            );
+          }
+          return;
+        }
+
+        try {
+          const statusRes = await fetch(
+            `${apiBaseUrl}/payment/status/${sessionId}`
+          );
+          const statusData = await statusRes.json();
+
+          if (statusData.ok && statusData.status === "Completed") {
+            stopPolling();
+            closePopup();
+            setPaymentStatus("completed");
+            setPaymentMessage("পেমেন্ট সফলভাবে সম্পন্ন হয়েছে। এগিয়ে যান।");
+          } else if (
+            statusData.ok &&
+            (statusData.status === "Failed" ||
+              statusData.status === "Cancelled")
+          ) {
+            stopPolling();
+            closePopup();
+            setPaymentStatus("failed");
+            setPaymentMessage(
+              "পেমেন্ট ব্যর্থ হয়েছে অথবা বাতিল করা হয়েছে। আবার চেষ্টা করুন।"
+            );
+          }
+        } catch {
+          /* Ignore transient polling errors */
+        }
+      }, 3000);
+    } catch (err) {
+      console.error("Payment initiation error:", err);
+      closePopup();
+      setPaymentStatus("failed");
+      setPaymentMessage(
+        "পেমেন্ট শুরু করতে সমস্যা হয়েছে। ইন্টারনেট সংযোগ পরীক্ষা করুন।"
+      );
+    }
   };
+
+  // ── User form ────────────────────────────────────────────────────────────
 
   const handleUserChange = (event) => {
     const { name, value } = event.target;
@@ -86,6 +320,8 @@ const OcdTest = () => {
     event.preventDefault();
     setStep("questions");
   };
+
+  // ── Quiz ─────────────────────────────────────────────────────────────────
 
   const handleAnswer = (value) => {
     const nextAnswers = [...answers];
@@ -102,7 +338,9 @@ const OcdTest = () => {
   };
 
   const submitReport = async (finalAnswers) => {
-    setReportStatus("রিপোর্ট সংরক্ষণ ও ইমেইল পাঠানোর জন্য প্রস্তুত করা হচ্ছে...");
+    setReportStatus(
+      "রিপোর্ট সংরক্ষণ ও ইমেইল পাঠানোর জন্য প্রস্তুত করা হচ্ছে..."
+    );
 
     const payload = {
       user,
@@ -113,7 +351,7 @@ const OcdTest = () => {
         0
       ),
       resultTitle: report.title,
-      reportText: report.text, // Add the full report text to the payload
+      reportText: report.text,
       answers: finalAnswers,
     };
 
@@ -121,24 +359,106 @@ const OcdTest = () => {
       const target = await saveReport(payload);
       setReportStatus(
         target === "server"
-          ? "রিপোর্ট ডাটাবেসে সেভ হয়েছে এবং ইমেইল সার্ভিসে পাঠানো হয়েছে।"
-          : "Backend সেট না থাকায় রিপোর্ট ব্রাউজারের localStorage-এ সেভ হয়েছে।"
+          ? "রিপোর্ট ডাটাবেসে সেভ হয়েছে এবং ইমেইল সার্ভিসে পাঠানো হয়েছে।"
+          : "Backend সেট না থাকায় রিপোর্ট ব্রাউজারের localStorage-এ সেভ হয়েছে।"
       );
     } catch {
       setReportStatus(
-        "রিপোর্ট তৈরি হয়েছে, তবে সার্ভারে পাঠানো যায়নি। backend endpoint পরীক্ষা করুন।"
+        "রিপোর্ট তৈরি হয়েছে, তবে সার্ভারে পাঠানো যায়নি। backend endpoint পরীক্ষা করুন।"
       );
     }
   };
 
+  // ── Reset ────────────────────────────────────────────────────────────────
+
   const resetTest = () => {
+    stopPolling();
+    closePopup();
     setStep("payment");
     setUser(initialUser);
     setAnswers([]);
     setCurrentIndex(0);
     setReportStatus("");
+    setPaymentStatus("idle");
     setPaymentMessage("");
   };
+
+  // ── Payment step button rendering ────────────────────────────────────────
+
+  const isPaymentBusy =
+    paymentStatus === "initiating" || paymentStatus === "pending";
+
+  const PaymentButton = () => {
+    if (paymentStatus === "completed") {
+      return (
+        <button
+          type="button"
+          onClick={() => setStep("details")}
+          className="mt-6 w-full rounded-full bg-[#22B573] px-6 py-3 font-bold text-white transition hover:bg-[#1a935b] flex items-center justify-center gap-2"
+        >
+          {/* Animated checkmark */}
+          <svg
+            className="w-5 h-5 shrink-0"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+          >
+            <path
+              fillRule="evenodd"
+              d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+              clipRule="evenodd"
+            />
+          </svg>
+          পেমেন্ট সম্পন্ন হয়েছে, এগিয়ে যান
+        </button>
+      );
+    }
+
+    return (
+      <button
+        type="button"
+        id="ssl-pay-btn"
+        onClick={handlePayment}
+        disabled={isPaymentBusy}
+        className={`mt-6 w-full rounded-full px-6 py-3 font-bold text-white transition flex items-center justify-center gap-2 ${
+          isPaymentBusy
+            ? "bg-[#22B573]/70 cursor-not-allowed"
+            : "bg-[#22B573] hover:bg-[#1a935b]"
+        }`}
+      >
+        {isPaymentBusy ? (
+          <>
+            {/* Spinner */}
+            <svg
+              className="w-5 h-5 animate-spin shrink-0"
+              viewBox="0 0 24 24"
+              fill="none"
+            >
+              <circle
+                className="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+              />
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+              />
+            </svg>
+            {paymentStatus === "initiating"
+              ? "পেমেন্ট শুরু হচ্ছে…"
+              : "পেমেন্টের অপেক্ষায়…"}
+          </>
+        ) : (
+          "SSLCommerz দিয়ে পে করুন"
+        )}
+      </button>
+    );
+  };
+
+  // ── Render ───────────────────────────────────────────────────────────────
 
   return (
     <div className="min-h-screen bg-[#f7fbf8]">
@@ -147,6 +467,7 @@ const OcdTest = () => {
       </div>
 
       <main className="container mx-auto px-4 py-10 md:py-14">
+        {/* Header */}
         <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
           <div>
             <Link
@@ -166,14 +487,21 @@ const OcdTest = () => {
           </div>
         </div>
 
+        {/* Wizard card */}
         <section className="rounded-lg border border-[#dcefe5] bg-white p-5 shadow-xl shadow-green-100/50 md:p-8">
+          {/* Step indicator */}
           <div className="mb-8 grid gap-3 md:grid-cols-4">
             {["পেমেন্ট", "তথ্য", "প্রশ্ন", "রিপোর্ট"].map((label, index) => {
-              const activeIndex = ["payment", "details", "questions", "report"].indexOf(step);
+              const activeIndex = [
+                "payment",
+                "details",
+                "questions",
+                "report",
+              ].indexOf(step);
               return (
                 <div
                   key={label}
-                  className={`rounded-lg px-4 py-3 text-sm font-bold ${
+                  className={`rounded-lg px-4 py-3 text-sm font-bold transition-colors ${
                     index <= activeIndex
                       ? "bg-[#22B573] text-white"
                       : "bg-[#eef7f2] text-[#173d2b]"
@@ -185,6 +513,7 @@ const OcdTest = () => {
             })}
           </div>
 
+          {/* ── PAYMENT STEP ─────────────────────────────────────────────── */}
           {step === "payment" && (
             <div className="grid gap-8 lg:grid-cols-[0.95fr_1.05fr]">
               <div>
@@ -192,51 +521,78 @@ const OcdTest = () => {
                   SSLCommerz পেমেন্ট সম্পন্ন করুন
                 </h2>
                 <p className="mt-3 leading-7 text-gray-600">
-                  পেমেন্ট সম্পন্ন হলে আপনার ব্যক্তিগত তথ্য নেওয়া হবে এবং তারপর
-                  প্রশ্ন শুরু হবে। লাইভ সার্ভারে SSLCommerz initiate endpoint
-                  যুক্ত করলে এই ধাপ সরাসরি পেমেন্ট গেটওয়েতে যাবে।
+                  নিচের বাটনে ক্লিক করলে একটি নিরাপদ SSLCommerz পেমেন্ট
+                  উইন্ডো খুলবে। পেমেন্ট শেষ হলে এই পেজ স্বয়ংক্রিয়ভাবে
+                  আপডেট হয়ে যাবে।
                 </p>
+
+                {/* Status message area */}
                 {paymentMessage && (
-                  <p className="mt-5 rounded-lg bg-[#e9f8f0] p-4 text-sm font-semibold text-[#173d2b]">
+                  <p
+                    className={`mt-5 rounded-lg p-4 text-sm font-semibold leading-6 ${
+                      paymentStatus === "failed"
+                        ? "bg-red-50 text-red-700"
+                        : paymentStatus === "completed"
+                        ? "bg-[#e9f8f0] text-[#173d2b]"
+                        : "bg-[#e9f8f0] text-[#173d2b]"
+                    }`}
+                  >
                     {paymentMessage}
                   </p>
                 )}
               </div>
+
               <div className="rounded-lg border border-[#dcefe5] bg-[#f8fdfb] p-6">
-                <p className="text-sm font-semibold text-gray-500">পরিশোধযোগ্য</p>
+                <p className="text-sm font-semibold text-gray-500">
+                  পরিশোধযোগ্য
+                </p>
                 <p className="mt-2 text-4xl font-bold text-[#10251b]">
                   ৳{paymentFee}
                 </p>
-                <button
-                  type="button"
-                  onClick={handlePayment}
-                  className="mt-6 w-full rounded-full bg-[#22B573] px-6 py-3 font-bold text-white transition hover:bg-[#1a935b]"
-                >
-                  SSLCommerz দিয়ে পে করুন
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setStep("details")}
-                  className="mt-3 w-full rounded-full border border-[#22B573] px-6 py-3 font-bold text-[#22B573] transition hover:bg-[#e9f8f0]"
-                >
-                  পেমেন্ট সম্পন্ন হয়েছে, এগিয়ে যান
-                </button>
+
+                {/* Dynamic payment button */}
+                <PaymentButton />
+
+                {/* Retry hint shown only on failure */}
+                {paymentStatus === "failed" && (
+                  <p className="mt-3 text-center text-xs text-gray-400">
+                    উপরের বাটনে ক্লিক করে আবার চেষ্টা করুন
+                  </p>
+                )}
+
+                {/* SSLCommerz badge */}
+                <div className="mt-5 flex items-center justify-center gap-2 text-xs text-gray-400">
+                  <svg
+                    className="w-4 h-4 text-[#22B573]"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                  SSLCommerz দ্বারা সুরক্ষিত পেমেন্ট
+                </div>
               </div>
             </div>
           )}
 
+          {/* ── DETAILS STEP ─────────────────────────────────────────────── */}
           {step === "details" && (
             <form onSubmit={handleUserSubmit} className="mx-auto max-w-3xl">
               <h2 className="text-2xl font-bold text-[#10251b]">
                 আপনার তথ্য দিন
               </h2>
               <p className="mt-2 text-gray-600">
-                রিপোর্ট তৈরি, ইমেইল পাঠানো এবং ডাটাবেসে সংরক্ষণের জন্য তথ্য প্রয়োজন।
+                রিপোর্ট তৈরি, ইমেইল পাঠানো এবং ডাটাবেসে সংরক্ষণের জন্য তথ্য
+                প্রয়োজন।
               </p>
               <div className="mt-6 grid gap-4 md:grid-cols-2">
                 {[
                   ["name", "নাম", "text"],
-                  ["age", "বয়স", "number"],
+                  ["age", "বয়স", "number"],
                   ["email", "ইমেইল", "email"],
                   ["phone", "ফোন নম্বর", "tel"],
                 ].map(([name, label, type]) => (
@@ -264,6 +620,7 @@ const OcdTest = () => {
             </form>
           )}
 
+          {/* ── QUESTIONS STEP ───────────────────────────────────────────── */}
           {step === "questions" && (
             <div className="mx-auto max-w-4xl">
               <div className="mb-6">
@@ -323,6 +680,7 @@ const OcdTest = () => {
             </div>
           )}
 
+          {/* ── REPORT STEP ──────────────────────────────────────────────── */}
           {step === "report" && (
             <div className="mx-auto max-w-4xl">
               <div className="rounded-lg bg-[#10251b] p-6 text-white md:p-8">
@@ -342,7 +700,7 @@ const OcdTest = () => {
                 <p className="mt-3 leading-8 text-gray-700">{report.text}</p>
                 <p className="mt-5 rounded-lg bg-white p-4 text-sm leading-6 text-gray-600">
                   এই রিপোর্টটি প্রাথমিক স্ক্রিনিং হিসেবে তৈরি। এটি চিকিৎসকের
-                  চূড়ান্ত রোগনির্ণয়ের বিকল্প নয়।
+                  চূড়ান্ত রোগনির্ণয়ের বিকল্প নয়।
                 </p>
                 {reportStatus && (
                   <p className="mt-4 text-sm font-semibold text-[#22B573]">

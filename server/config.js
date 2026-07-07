@@ -13,6 +13,13 @@ export const config = {
   smtpUser: env.SMTP_USER,
   smtpPass: env.SMTP_PASS,
   emailFrom: env.EMAIL_FROM,
+  // SSLCommerz payment gateway
+  sslcommerzStoreId: env.SSLCOMMERZ_STORE_ID || "",
+  sslcommerzStorePassword: env.SSLCOMMERZ_STORE_PASSWORD || "",
+  sslcommerzIsLive: env.SSLCOMMERZ_IS_LIVE === "true",
+  // Public-facing URL of this backend (used as SSLCommerz callback base URL)
+  backendUrl:
+    env.BACKEND_URL || `http://localhost:${env.API_PORT || 5000}`,
 };
 
 export function assertConfig() {

@@ -3,6 +3,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 
 import psychologicalTestsRouter from "./routes/psychologicalTests.js";
+import paymentRouter from "./routes/payment.js";
 import { connectDB } from "./db.js";
 
 dotenv.config();
@@ -16,6 +17,7 @@ app.use(cors({
   credentials: true,
 }));
 app.use(express.json({ limit: "1mb" }));
+app.use(express.urlencoded({ extended: true })); // SSLCommerz sends form-POST callbacks
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
@@ -27,6 +29,7 @@ connectDB().catch((err) => {
 });
 
 app.use("/api", psychologicalTestsRouter);
+app.use("/api", paymentRouter);
 
 const port = env.API_PORT || 5000;
 app.listen(port, () => {
