@@ -1,4 +1,4 @@
-export const paymentFee = 500;
+export const paymentFee = 50;
 
 export const answerOptions = {
   frequency: [
