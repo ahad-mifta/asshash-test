@@ -56,6 +56,18 @@ const Footer = ({ color = "bg-[#18332A]" }) => {
               </li>
             </ul>
           </div>
+
+          {/* Right Section: Account */}
+          <div className="text-left">
+            <h4 className="font-semibold mb-3">Account</h4>
+            <ul className="space-y-2 text-sm text-gray-200">
+              <li>
+                <Link to="/account-deletion" className="hover:underline">
+                  Delete Account &amp; Data
+                </Link>
+              </li>
+            </ul>
+          </div>
         </footer>
 
         {/* SSL Badge */}

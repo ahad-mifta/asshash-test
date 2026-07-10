@@ -11,6 +11,7 @@ import {
 } from "../pages/PrivacyPolicy/PrivacyPolicy.jsx";
 import PsychologicalTest from "../pages/PsychologicalTest/PsychologicalTest.jsx";
 import OcdTest from "../pages/PsychologicalTest/OcdTest.jsx";
+import AccountDeletion from "../pages/AccountDeletion/AccountDeletion.jsx";
 
 export const router = createBrowserRouter(
   createRoutesFromElements(
@@ -20,6 +21,7 @@ export const router = createBrowserRouter(
       <Route path="privacy-policy/doctor" element={<DoctorPrivacyPolicy />} />
       <Route path="psychological-test" element={<PsychologicalTest />} />
       <Route path="psychological-test/:testId" element={<OcdTest />} />
+      <Route path="account-deletion" element={<AccountDeletion />} />
     </Route>
   )
 );
