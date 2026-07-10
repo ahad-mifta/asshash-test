@@ -11,7 +11,7 @@ const Navbar = ({ pic }) => {
       </div>
       <div className="navbar-end">
         <Link to="/psychological-test">
-          <button className="bg-[#22B573] text-white px-6 py-2 rounded-full font-semibold hover:bg-[#1a935b] transition">
+          <button className="bg-[#22B573] text-white text-xs sm:text-sm whitespace-nowrap px-4 sm:px-6 py-1.5 sm:py-2 rounded-full font-semibold hover:bg-[#1a935b] transition">
             সাইকোলজিক্যাল টেস্ট
           </button>
         </Link>
